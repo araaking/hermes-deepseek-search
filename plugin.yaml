@@ -2,7 +2,7 @@
 # Python dependencies come from pyproject.toml next to this file. `name` must stay equal to the
 # `hermes_agent.plugins` entry point in pyproject.toml so both install routes share one plugin id.
 name: web-deepseek
-version: 0.2.0
+version: 0.3.0
 manifest_version: 2
 api_version: 1
 description: DeepSeek Search & Fetch API as the backend for web_search and web_extract
