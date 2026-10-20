@@ -34,6 +34,7 @@ account or key.
 - Page text from Fetch is cleaned of Markdown backslash escapes (`\#`, `\-`, …) outside code blocks.
 - Imports only Hermes' public plugin surface (`agent.web_search_provider`).
 - Built-in end-to-end check: `hermes web-deepseek smoke`.
+- Also an MCP server (`deepseek-search-mcp`) for Claude Code, Cursor, Claude Desktop and other MCP clients.
 
 ## Requirements
 
@@ -141,6 +142,46 @@ When a configured web backend fails, Hermes may silently answer from a free keyl
 hermes config set web.keyless_fallback false
 ```
 
+## MCP server (Claude Code, Cursor, Claude Desktop)
+
+Outside Hermes, the same client runs as a stdio MCP server with two tools. It needs the `mcp` extra and
+[uv](https://docs.astral.sh/uv/); `uvx` fetches and caches it on first start.
+
+Claude Code:
+
+```bash
+claude mcp add deepseek-search -e DEEPSEEK_API_KEY=sk-... --   uvx --from "hermes-deepseek-search[mcp] @ git+https://github.com/araaking/hermes-deepseek-search" deepseek-search-mcp
+```
+
+Add `-s user` after `add` to make it available in every project, not just the current one.
+
+Cursor (`~/.cursor/mcp.json`), Claude Desktop (`claude_desktop_config.json`) and most other clients:
+
+```json
+{
+  "mcpServers": {
+    "deepseek-search": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "hermes-deepseek-search[mcp] @ git+https://github.com/araaking/hermes-deepseek-search",
+        "deepseek-search-mcp"
+      ],
+      "env": { "DEEPSEEK_API_KEY": "sk-..." }
+    }
+  }
+}
+```
+
+| Tool | Parameters | Returns |
+|---|---|---|
+| `deepseek_search` | `query` (operators allowed), `count` 1–50 (default 10), `ori_question` (optional) | Numbered list: title, URL, summary and the `[site · date · relevance · authority]` line |
+| `deepseek_fetch` | `url`, `max_chars` 1,000–500,000 (default 50,000) | `# Title`, `Source: <url>` and the page as Markdown, cut at `max_chars` with a marker |
+
+Both tools are read-only, bill exactly like the Hermes plugin (per successful request), finish within 60 s
+(search) or 100 s (fetch), and report DeepSeek errors such as `HTTP 401` as tool errors. Hermes users do not need
+the MCP server: Hermes' own `web_search` / `web_extract` already go through the plugin.
+
 ## Limits
 
 - Search: 100 QPS per account. Fetch: 25 QPS per account, plus a per-domain limit.
@@ -150,7 +191,6 @@ hermes config set web.keyless_fallback false
 ## Not supported (yet)
 
 - A listing in the Hermes plugin catalog, or a PyPI package.
-- An MCP server for non-Hermes clients.
 
 ## Troubleshooting
 
@@ -190,6 +230,7 @@ __init__.py    # directory-plugin wrapper: forwards register(ctx) to the package
 src/hermes_deepseek_search/
 ├── core/      # Hermes-free async DeepSeek client: validation, errors, retry, models, Markdown cleanup
 ├── hermes/    # Hermes adapter: provider, settings, result envelopes, CLI command, register() entry point
+├── mcp_server.py  # stdio MCP server (deepseek_search / deepseek_fetch), needs the [mcp] extra
 └── smoke.py   # end-to-end check against a real Hermes install
 tests/         # core, adapter (with a stubbed Hermes ABC) and smoke evaluators
 ```

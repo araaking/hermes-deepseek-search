@@ -3,6 +3,19 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] — 2026-10-20
+
+### Added
+- MCP server for Claude Code, Cursor, Claude Desktop and other MCP clients: `deepseek-search-mcp` (stdio) with the
+  tools `deepseek_search` and `deepseek_fetch`, installed with the optional `mcp` extra, e.g.
+  `uvx --from "hermes-deepseek-search[mcp] @ git+https://github.com/araaking/hermes-deepseek-search" deepseek-search-mcp`.
+  Works with MCP Python SDK 2.0 and later 2.x.
+
+### Changed
+- Development dependencies in `pyproject.toml` are floors only, so Hermes 0.22 can resolve them together with its
+  own pins; `uv.lock` pins what CI runs.
+- Internal: the search description and query-shortened notice moved to `core.formatting`, shared by both adapters.
+
 ## [0.2.0] — 2026-10-20
 
 ### Added

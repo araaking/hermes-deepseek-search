@@ -18,7 +18,13 @@ from typing import Any
 
 from agent.web_search_provider import WebSearchProvider, get_provider_env
 
-from hermes_deepseek_search.core import API_KEY_ENV, DeepSeekClient, DeepSeekError, unescape_markdown
+from hermes_deepseek_search.core import (
+    API_KEY_ENV,
+    DeepSeekClient,
+    DeepSeekError,
+    truncation_notice,
+    unescape_markdown,
+)
 from hermes_deepseek_search.hermes._sync import run_sync
 from hermes_deepseek_search.hermes.envelope import (
     document,
@@ -113,11 +119,7 @@ class DeepSeekWebSearchProvider(WebSearchProvider):
                 resp = await client.search(query, count=count)
         kept = [r for r in resp.results if r.rerank_score >= self._settings.min_rerank_score]
         logger.info("DeepSeek Search: %d results (from %d raw, limit %d)", len(kept), len(resp.results), count)
-        notice = (
-            f"Query was longer than 128 characters and was shortened to: {resp.query!r}"
-            if resp.query_truncated
-            else None
-        )
+        notice = truncation_notice(resp.query) if resp.query_truncated else None
         return search_ok(search_rows(kept), notice=notice)
 
     # --- web_extract (async) -----------------------------------------------------------------------------------
