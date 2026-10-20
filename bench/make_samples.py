@@ -20,11 +20,11 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from bench.samples import DATA_DIR, SETS, SampleRow, write
+from bench.score import LONG_CHARS
 
 SOURCE_URL = "https://openaipublic.blob.core.windows.net/simple-evals/simple_qa_test_set.csv"
 DEV_SEED, TEST_SEED, LONG_SEED = 20261020, 20261021, 20261022
 DEV_SIZE, TEST_SIZE, LONG_SIZE = 200, 300, 100
-LONG_CHARS = 128  # DeepSeek's query limit; longer questions used to be cut
 
 
 def read_source(source: str) -> list[dict[str, str]]:

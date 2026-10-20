@@ -58,7 +58,8 @@ Failed and empty requests are not billed, so the real cost can be lower.
   (`score.matches`, the original rule): lower case, accents removed, `3,000` = `3000`; a multi-word answer of 2–6
   significant words counts when all of them appear in the same result.
 - Pages of the dataset itself are removed before ranking: `huggingface.co`, `kaggle.com` and
-  `github.com/openai/simple-evals`. In the original run, 16 DeepSeek results were such pages.
+  `github.com/openai/simple-evals`. In the original DeepSeek run (`count=10`) that removed 29 results; 17 of them,
+  in 14 questions, contained the answer, but only one question lost its last top-10 hit.
 - Reported: @1, @3, @5 (what Hermes shows by default), @10, MRR, the share of questions over 128 characters found
   in the top 10, errors, empty results, latency p50/p90 and cost, each rate with a 95% bootstrap interval.
 - `--compare` pairs the two runs by question and runs an exact McNemar test per cut-off.

@@ -22,9 +22,11 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
+from hermes_deepseek_search.core.validation import MAX_QUERY_CHARS
+
 PRICE_PER_REQUEST = 0.00075  # USD per successful, non-empty Search request
 KS = (1, 3, 5, 10)  # Hermes web_search shows 5 results by default
-LONG_CHARS = 128  # DeepSeek's query limit
+LONG_CHARS = MAX_QUERY_CHARS  # longer questions are shortened before they are sent
 EXCLUDED_HOSTS = ("huggingface.co", "kaggle.com")  # dataset mirrors that contain the answer key
 EXCLUDED_PREFIXES = ("github.com/openai/simple-evals",)
 

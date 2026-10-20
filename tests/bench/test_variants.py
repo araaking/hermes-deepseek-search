@@ -69,9 +69,11 @@ def test_report_layout():
     run = _run([{"id": "1", "question": QUESTION, "answer": "Riverside", "results": RESULTS}])
     lines = variants.report(run, best=2, variants=[Variant(10), Variant(10, w_overlap=0.0)]).splitlines()
     assert lines[0].startswith("1 questions · best 2 of 2 variants")
-    assert lines[1].endswith("DeepSeek order (reference)")
-    assert "@1 100.0%" in lines[2]
-    assert "(@1 vs DeepSeek: +1/-0" in lines[2]
+    assert "uncorrected" in lines[1]
+    assert "confirm a pick on the test set" in lines[1]
+    assert lines[2].endswith("DeepSeek order (reference)")
+    assert "@1 100.0%" in lines[3]
+    assert "(@1 vs DeepSeek: +1/-0" in lines[3]
 
 
 def test_cli(tmp_path, capsys):

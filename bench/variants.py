@@ -121,6 +121,7 @@ def report(run: Mapping[str, Any], *, best: int = 10, variants: Sequence[Variant
     ranked = sorted((v for v in ranks if v is not None), key=sort_key, reverse=True)
     lines = [
         f"{len(ids)} questions · best {min(best, len(ranked))} of {len(ranked)} variants by @1 (then @5, @10)",
+        "  p-values are uncorrected and the variants were chosen on this set; confirm a pick on the test set",
         line("DeepSeek order (reference)", ranks[None], vs_reference=False),
     ]
     lines += [line(v.label(), ranks[v], vs_reference=True) for v in ranked[:best]]
