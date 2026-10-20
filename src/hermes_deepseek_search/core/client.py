@@ -27,6 +27,7 @@ from hermes_deepseek_search.core.errors import (
 from hermes_deepseek_search.core.models import FetchResult, SearchResponse, SearchResult
 from hermes_deepseek_search.core.validation import (
     clamp_count,
+    validate_base_url,
     validate_localization,
     validate_ori_question,
     validate_query,
@@ -79,7 +80,7 @@ class DeepSeekClient:
         if not api_key or not api_key.strip():
             raise MissingApiKeyError(f"{API_KEY_ENV} is not set.")
         self._api_key = api_key.strip()
-        self._base_url = base_url.rstrip("/")
+        self._base_url = validate_base_url(base_url)
         self._search_timeout = search_timeout
         self._fetch_timeout = fetch_timeout
         self._max_retries = max(0, max_retries)
@@ -88,6 +89,7 @@ class DeepSeekClient:
         self._transport = transport
         self._sleep = sleep
         self._http: httpx.AsyncClient | None = None
+        self._closed = False
 
     @classmethod
     def from_env(cls, env_var: str = API_KEY_ENV, **kwargs: Any) -> DeepSeekClient:
@@ -103,11 +105,15 @@ class DeepSeekClient:
         await self.aclose()
 
     async def aclose(self) -> None:
+        """Close the HTTP client. Terminal: later requests raise instead of silently reopening a connection."""
+        self._closed = True
         if self._http is not None:
             await self._http.aclose()
             self._http = None
 
     def _client(self) -> httpx.AsyncClient:
+        if self._closed:
+            raise RuntimeError("DeepSeekClient is closed")
         if self._http is None:
             self._http = httpx.AsyncClient(
                 base_url=self._base_url,
@@ -142,7 +148,7 @@ class DeepSeekClient:
         if not isinstance(raw, list):
             raise ResponseParseError(f"{_SEARCH_LABEL} response has no 'results' list.")
         results = [SearchResult.from_api(item) for item in raw if isinstance(item, dict) and item.get("url")]
-        logger.info(
+        logger.debug(
             "DeepSeek Search '%s': %d results (from %d raw, count %d%s)",
             q,
             len(results),
@@ -158,7 +164,7 @@ class DeepSeekClient:
         if not isinstance(data, dict):
             raise ResponseParseError(f"{_FETCH_LABEL} response is not a JSON object.")
         page = FetchResult(url=u, title=str(data.get("title") or ""), content=str(data.get("content") or ""))
-        logger.info("DeepSeek Fetch '%s': %d chars", u, len(page.content))
+        logger.debug("DeepSeek Fetch '%s': %d chars", u, len(page.content))
         return page
 
     async def _post(self, path: str, payload: dict[str, Any], *, label: str, request_timeout: float) -> Any:
@@ -167,6 +173,8 @@ class DeepSeekClient:
             err: DeepSeekError
             try:
                 resp = await self._client().post(path, json=payload, timeout=request_timeout)
+            except httpx.DecodingError as exc:  # a RequestError, not a TransportError: retrying will not help
+                raise ResponseParseError(f"Could not decode {label} response: {exc}") from exc
             except httpx.TransportError as exc:
                 err = NetworkError(f"Could not reach {label}: {exc}")
                 err.__cause__ = exc

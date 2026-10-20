@@ -81,7 +81,7 @@ Optional settings live under `plugins.entries.web-deepseek.settings`:
 |---|---|---|
 | `min_rerank_score` | `0.0` | Drop search hits below this DeepSeek score (0–3; 1.5+ is high quality) |
 | `max_retries` | `2` | Retries for 408 / 429 / 5xx / network errors (0–5) |
-| `base_url` | `https://api.deepseek.com` | API endpoint (for proxies) |
+| `base_url` | `https://api.deepseek.com` | API endpoint (for proxies). Must be `https://` (`http://` only for localhost) with no credentials in the URL — it receives your API key |
 | `extract_concurrency` | `5` | Parallel Fetch calls per `web_extract` (1–25) |
 
 ## 5. Verify the real configuration

@@ -19,6 +19,7 @@ import pytest
 from hermes_deepseek_search.core import (
     AuthenticationError,
     ContentNotFoundError,
+    DeepSeekAPIError,
     DeepSeekClient,
     FetchBlockedError,
     FetchResult,
@@ -90,10 +91,16 @@ class TestConstruction:
 
     async def test_aclose_idempotent(self, make_client):
         client = make_client(_ok({"results": []}))
-        await client.aclose()
         await client.search("q")
         await client.aclose()
         await client.aclose()
+
+    async def test_closed_client_refuses_requests(self, make_client, recorder):
+        client = make_client(_ok({"results": []}))
+        await client.aclose()
+        with pytest.raises(RuntimeError, match="closed"):
+            await client.search("q")
+        assert recorder.requests == []
 
 
 # ---------------------------------------------------------------------------
@@ -378,3 +385,57 @@ class TestValidationSendsNothing:
             with pytest.raises(ValidationError):
                 await call(client)
         assert recorder.requests == []
+
+
+# ---------------------------------------------------------------------------
+# Hardening (review @ 857b292)
+# ---------------------------------------------------------------------------
+
+
+class TestHardening:
+    async def test_decoding_error_is_typed_and_not_retried(self, make_client, recorder):
+        # httpx decodes the body while post() reads it, so a corrupt gzip body surfaces from post() itself.
+        broken = httpx.DecodingError("Error -3 while decompressing data: incorrect header check")
+        async with make_client(broken) as client:
+            with pytest.raises(ResponseParseError, match="Could not decode DeepSeek Search response"):
+                await client.search("q")
+        assert len(recorder.requests) == 1
+
+    @pytest.mark.parametrize("status", [408, 503])
+    async def test_retry_after_honored_for_retryable_statuses(self, make_client, recorder, status):
+        async with make_client(_error(status, headers={"Retry-After": "7"}), _ok({"results": []})) as client:
+            await client.search("q")
+        assert recorder.sleeps == [7.0]
+
+    async def test_redirects_are_not_followed(self, make_client, recorder):
+        moved = httpx.Response(302, headers={"Location": "https://evil.example/steal"})
+        async with make_client(moved) as client:
+            with pytest.raises(DeepSeekAPIError, match="HTTP 302"):
+                await client.search("q")
+        assert [r.url.host for r in recorder.requests] == ["api.deepseek.com"]
+
+    @pytest.mark.parametrize(
+        "base_url", ["http://api.example.com", "ftp://x.example", "https://", "", "https://a b.example"]
+    )
+    def test_invalid_base_url_rejected(self, base_url):
+        with pytest.raises(ValidationError):
+            DeepSeekClient("sk-x", base_url=base_url)
+
+    def test_base_url_with_credentials_rejected_without_echo(self):
+        with pytest.raises(ValidationError) as excinfo:
+            DeepSeekClient("sk-x", base_url="https://user:hunter2@proxy.example")
+        assert "hunter2" not in str(excinfo.value)
+
+    @pytest.mark.parametrize("base_url", ["http://localhost:8080", "http://127.0.0.1", "http://[::1]:9000/"])
+    def test_loopback_http_allowed(self, base_url):
+        assert DeepSeekClient("sk-x", base_url=base_url)._base_url == base_url.rstrip("/")
+
+    @pytest.mark.parametrize("score", ["nan", "inf", "-inf"])
+    def test_non_finite_score_becomes_zero(self, score):
+        assert SearchResult.from_api({"url": "https://x.example", "rerank_score": score}).rerank_score == 0.0
+
+    async def test_query_not_logged_at_info(self, make_client, caplog):
+        with caplog.at_level("INFO"):
+            async with make_client(_ok({"results": []})) as client:
+                await client.search("very private question")
+        assert "very private question" not in caplog.text

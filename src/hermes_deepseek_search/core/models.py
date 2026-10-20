@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
@@ -33,6 +34,8 @@ class SearchResult:
         try:
             score = float(item.get("rerank_score") or 0.0)
         except (TypeError, ValueError):
+            score = 0.0
+        if not math.isfinite(score):  # "nan" would silently fail every >= comparison downstream
             score = 0.0
         try:
             authority = int(item.get("authority", -1))

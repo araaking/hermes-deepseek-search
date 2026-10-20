@@ -25,7 +25,9 @@ account or key.
   (`POST /v1/tools/fetch`).
 - Search descriptions = DeepSeek's summary plus a metadata line:
   `[site · YYYY-MM-DD · relevance x.y/3 · authority n/4]`.
-- Parallel extract (5 at a time by default) under a 100 s batch deadline; one failing URL never fails the batch.
+- Parallel extract (5 at a time by default) under a 100 s batch deadline; one failing URL never fails the batch,
+  and in-flight fetches are cancelled if Hermes times the call out.
+- Each `web_search` call finishes within 60 s, retries included, so it never blocks Hermes for long.
 - Retries with backoff for 408 / 429 / 5xx / network errors; clear, model-readable errors for 401 / 402 / 403 / 404.
 - Local validation before spending a request: queries over 128 characters are shortened at a word boundary (the
   response carries a `notice`), invalid URLs are rejected without a call.
@@ -102,7 +104,7 @@ plugins:
 |---|---|---|---|
 | `min_rerank_score` | `0.0` | 0–3 | Drop search hits below this DeepSeek score (1.5+ is high quality) |
 | `max_retries` | `2` | 0–5 | Retries for 408 / 429 / 5xx / network errors |
-| `base_url` | `https://api.deepseek.com` | http(s) URL | API endpoint, e.g. for a proxy |
+| `base_url` | `https://api.deepseek.com` | `https://` URL (`http://` only for localhost), no credentials | API endpoint, e.g. for a proxy. It receives your API key; a non-DeepSeek host logs a warning |
 | `extract_concurrency` | `5` | 1–25 | Parallel Fetch calls per `web_extract` |
 
 Invalid values fall back to the default with a warning in the Hermes log.

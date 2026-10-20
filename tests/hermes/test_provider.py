@@ -399,6 +399,12 @@ class TestSettings:
             ({"extract_concurrency": 100}, "extract_concurrency"),
             ({"base_url": "ftp://x"}, "base_url"),
             ({"base_url": 42}, "base_url"),
+            ({"max_retries": float("inf")}, "max_retries"),
+            ({"max_retries": float("nan")}, "max_retries"),
+            ({"min_rerank_score": float("nan")}, "min_rerank_score"),
+            ({"extract_concurrency": 2.7}, "extract_concurrency"),
+            ({"base_url": "http://proxy.example"}, "base_url"),
+            ({"base_url": "https://user:pw@proxy.example"}, "base_url"),
         ],
     )
     def test_from_ctx_invalid_falls_back_with_warning(self, caplog, settings, field):
@@ -454,3 +460,72 @@ class TestRegister:
                 if match.group(1).split(".")[0] in hermes_roots:
                     found.add(match.group(1))
         assert found == {"agent.web_search_provider"}
+
+
+# ---------------------------------------------------------------------------
+# Hardening (review @ 857b292)
+# ---------------------------------------------------------------------------
+
+
+class TestHardening:
+    async def test_cancellation_stops_inflight_fetches(self, api_key):
+        state = {"started": 0, "finished": 0}
+
+        class Slow(httpx.AsyncBaseTransport):
+            async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+                state["started"] += 1
+                await asyncio.sleep(0.3)
+                state["finished"] += 1
+                return httpx.Response(200, json={"title": "T", "content": "ok"})
+
+        provider = DeepSeekWebSearchProvider(client_factory=lambda k: DeepSeekClient(k, transport=Slow()))
+        with pytest.raises(TimeoutError):  # Hermes wraps extract() in asyncio.wait_for(web.extract_timeout)
+            await asyncio.wait_for(provider.extract([f"https://{i}.example" for i in range(3)]), timeout=0.05)
+        await asyncio.sleep(0.4)
+        assert state == {"started": 3, "finished": 0}
+
+    def test_search_overall_deadline(self, api_key):
+        class Slow(httpx.AsyncBaseTransport):
+            async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+                await asyncio.sleep(5)
+                return httpx.Response(200, json={"results": []})
+
+        provider = DeepSeekWebSearchProvider(
+            client_factory=lambda k: DeepSeekClient(k, transport=Slow()), search_deadline=0.2
+        )
+        assert provider.search("q") == {"success": False, "error": "DeepSeek Search did not finish within 0.2s"}
+
+    async def test_close_failure_keeps_fetched_pages(self, api_key, caplog):
+        class BadClose(DeepSeekClient):
+            async def aclose(self) -> None:
+                raise RuntimeError("close boom")
+
+        transport = httpx.MockTransport(lambda r: httpx.Response(200, json={"title": "T", "content": "ok"}))
+        provider = DeepSeekWebSearchProvider(client_factory=lambda k: BadClose(k, transport=transport))
+        with caplog.at_level("WARNING"):
+            out = await provider.extract(["https://a.example"])
+        assert out[0]["content"] == "ok"
+        assert "closing the HTTP client failed" in caplog.text
+
+    def test_query_not_logged_at_info(self, make_provider, api_key, caplog):
+        with caplog.at_level("INFO"):
+            make_provider([_ok({"results": []})]).search("very private question")
+        assert "very private question" not in caplog.text
+
+    def test_loopback_http_base_url_allowed(self):
+        settings = ProviderSettings.from_ctx(FakeContext({"base_url": "http://localhost:8080"}))
+        assert settings.base_url == "http://localhost:8080"
+
+    def test_non_deepseek_host_warns(self, caplog):
+        with caplog.at_level("WARNING"):
+            settings = ProviderSettings.from_ctx(FakeContext({"base_url": "https://proxy.example"}))
+        assert settings.base_url == "https://proxy.example"
+        assert "API key is sent there" in caplog.text
+
+    def test_invalid_base_url_never_logged(self, caplog):
+        with caplog.at_level("WARNING"):
+            ProviderSettings.from_ctx(FakeContext({"base_url": "https://user:hunter2@proxy.example"}))
+        assert "hunter2" not in caplog.text
+
+    def test_whole_number_float_accepted_for_int_setting(self):
+        assert ProviderSettings.from_ctx(FakeContext({"max_retries": 3.0})).max_retries == 3

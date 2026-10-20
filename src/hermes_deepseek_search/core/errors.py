@@ -44,9 +44,14 @@ class ResponseParseError(DeepSeekError):
 
 
 class DeepSeekAPIError(DeepSeekError):
-    """Non-200 reply from the API. Subclasses add a ``hint`` telling the user what to do."""
+    """Non-200 reply from the API. Subclasses add a ``hint`` telling the user what to do; ``retry_after`` holds
+    the server's numeric ``Retry-After`` seconds for retryable statuses (None otherwise)."""
 
     hint: str = ""
+
+    def __init__(self, message: str, *, retry_after: float | None = None, **kwargs: Any) -> None:
+        super().__init__(message, **kwargs)
+        self.retry_after = retry_after
 
 
 class InvalidRequestError(DeepSeekAPIError):
@@ -92,14 +97,10 @@ class PayloadTooLargeError(DeepSeekAPIError):
 
 
 class RateLimitError(DeepSeekAPIError):
-    """HTTP 429. ``retry_after`` holds the server's numeric ``Retry-After`` seconds, if any."""
+    """HTTP 429."""
 
     retryable = True
     hint = "DeepSeek QPS limit exceeded (Search 100/s, Fetch 25/s per account, plus a per-domain Fetch limit)."
-
-    def __init__(self, message: str, *, retry_after: float | None = None, **kwargs: Any) -> None:
-        super().__init__(message, **kwargs)
-        self.retry_after = retry_after
 
 
 class ServerError(DeepSeekAPIError):
@@ -157,6 +158,5 @@ def error_from_response(status_code: int, body: str, headers: Mapping[str, str],
     message = f"{label} returned HTTP {status_code}" + (f": {detail}" if detail else "")
     if cls.hint:
         message = f"{message}. {cls.hint}"
-    if cls is RateLimitError:
-        return RateLimitError(message, status_code=status_code, code=code, retry_after=parse_retry_after(headers))
-    return cls(message, status_code=status_code, code=code)
+    retry_after = parse_retry_after(headers) if cls.retryable else None
+    return cls(message, status_code=status_code, code=code, retry_after=retry_after)

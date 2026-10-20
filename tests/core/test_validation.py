@@ -16,6 +16,7 @@ from hermes_deepseek_search.core import ValidationError
 from hermes_deepseek_search.core.validation import (
     MAX_QUERY_CHARS,
     clamp_count,
+    validate_base_url,
     validate_localization,
     validate_ori_question,
     validate_query,
@@ -161,3 +162,46 @@ class TestValidateUrl:
         with pytest.raises(ValidationError) as excinfo:
             validate_url(url)
         assert len(str(excinfo.value)) < 300
+
+    @pytest.mark.parametrize("url", ["https://a.example/x y", "https://a.example/\tx", "https://a.example/\x00"])
+    def test_whitespace_or_control_rejected(self, url):
+        with pytest.raises(ValidationError, match="whitespace or control"):
+            validate_url(url)
+
+
+# ---------------------------------------------------------------------------
+# validate_base_url
+# ---------------------------------------------------------------------------
+
+
+class TestValidateBaseUrl:
+    @pytest.mark.parametrize(
+        ("url", "expected"),
+        [
+            ("https://api.deepseek.com", "https://api.deepseek.com"),
+            ("  https://proxy.example/v1/ ", "https://proxy.example/v1"),
+            ("http://localhost:8080", "http://localhost:8080"),
+            ("HTTP://127.0.0.1", "HTTP://127.0.0.1"),
+            ("http://[::1]:9000", "http://[::1]:9000"),
+        ],
+    )
+    def test_accepted(self, url, expected):
+        assert validate_base_url(url) == expected
+
+    @pytest.mark.parametrize("url", ["", "   ", "api.deepseek.com", "ftp://x.example", "https://", "https://a b.c"])
+    def test_rejected_shape(self, url):
+        with pytest.raises(ValidationError, match="https:// URL with a host"):
+            validate_base_url(url)
+
+    def test_plain_http_rejected_for_remote_host(self):
+        with pytest.raises(ValidationError, match="only allowed for localhost"):
+            validate_base_url("http://proxy.example")
+
+    def test_credentials_rejected_without_echo(self):
+        with pytest.raises(ValidationError, match="username or password") as excinfo:
+            validate_base_url("https://user:hunter2@proxy.example")
+        assert "hunter2" not in str(excinfo.value)
+
+    def test_malformed_rejected(self):
+        with pytest.raises(ValidationError, match="not a valid URL"):
+            validate_base_url("http://[::1")

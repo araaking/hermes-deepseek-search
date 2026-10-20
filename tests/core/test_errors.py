@@ -142,6 +142,11 @@ class TestRetryAfter:
         assert isinstance(err, RateLimitError)
         assert err.retry_after == 3.0
 
+    def test_retry_after_only_for_retryable_statuses(self):
+        assert _err(503, "", {"Retry-After": "4"}).retry_after == 4.0
+        assert _err(408, "", {"Retry-After": "2"}).retry_after == 2.0
+        assert _err(400, "", {"Retry-After": "4"}).retry_after is None
+
 
 # ---------------------------------------------------------------------------
 # Hierarchy

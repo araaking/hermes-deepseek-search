@@ -34,6 +34,7 @@ logger = logging.getLogger(__name__)
 
 _MAX_SEARCH_COUNT = 50  # DeepSeek caps count at 50; Hermes buckets limits to 10/20/50/100
 _EXTRACT_DEADLINE_S = 100.0  # below Hermes' default web.extract_timeout (120s) so finished pages survive
+_SEARCH_DEADLINE_S = 60.0  # search() is sync: one call never blocks Hermes longer than this, retries included
 
 ClientFactory = Callable[[str], DeepSeekClient]
 
@@ -51,10 +52,12 @@ class DeepSeekWebSearchProvider(WebSearchProvider):
         *,
         client_factory: ClientFactory | None = None,
         extract_deadline: float = _EXTRACT_DEADLINE_S,
+        search_deadline: float = _SEARCH_DEADLINE_S,
     ) -> None:
         self._settings = settings or ProviderSettings()
         self._client_factory = client_factory or self._default_client
         self._extract_deadline = extract_deadline
+        self._search_deadline = search_deadline
 
     @property
     def name(self) -> str:
@@ -92,6 +95,8 @@ class DeepSeekWebSearchProvider(WebSearchProvider):
             return search_fail(f"{self.KEY_ENV} is not set")
         try:
             return run_sync(lambda: self._search_async(api_key, query, limit))
+        except TimeoutError:
+            return search_fail(f"DeepSeek Search did not finish within {self._search_deadline:g}s")
         except DeepSeekError as exc:
             return search_fail(str(exc))
         except Exception as exc:  # never raise into the tool wrapper
@@ -103,12 +108,11 @@ class DeepSeekWebSearchProvider(WebSearchProvider):
             count = max(1, min(int(limit), _MAX_SEARCH_COUNT))
         except (TypeError, ValueError):
             count = 5
-        async with self._client_factory(api_key) as client:
-            resp = await client.search(query, count=count)
+        async with asyncio.timeout(self._search_deadline):
+            async with self._client_factory(api_key) as client:
+                resp = await client.search(query, count=count)
         kept = [r for r in resp.results if r.rerank_score >= self._settings.min_rerank_score]
-        logger.info(
-            "DeepSeek Search '%s': %d results (from %d raw, limit %d)", resp.query, len(kept), len(resp.results), count
-        )
+        logger.info("DeepSeek Search: %d results (from %d raw, limit %d)", len(kept), len(resp.results), count)
         notice = (
             f"Query was longer than 128 characters and was shortened to: {resp.query!r}"
             if resp.query_truncated
@@ -129,11 +133,17 @@ class DeepSeekWebSearchProvider(WebSearchProvider):
             return [page_error(u, f"{self.KEY_ENV} is not set") for u in urls]
         logger.info("DeepSeek extract: %d URL(s)", len(urls))
         try:
-            async with self._client_factory(api_key) as client:
-                return await self._fetch_all(client, urls)
-        except Exception as exc:  # e.g. client construction failure — still one entry per URL
+            client = self._client_factory(api_key)
+        except Exception as exc:  # e.g. invalid settings — still one entry per URL
             logger.warning("DeepSeek extract error: %s", exc)
             return [page_error(u, f"DeepSeek extract failed: {exc}") for u in urls]
+        try:
+            return await self._fetch_all(client, urls)
+        finally:
+            try:
+                await client.aclose()
+            except Exception as exc:  # a failed close must not discard pages that were already fetched
+                logger.warning("DeepSeek extract: closing the HTTP client failed: %s", exc)
 
     async def _fetch_all(self, client: DeepSeekClient, urls: list[str]) -> list[dict[str, Any]]:
         gate = asyncio.Semaphore(self._settings.extract_concurrency)
@@ -150,11 +160,17 @@ class DeepSeekWebSearchProvider(WebSearchProvider):
                 return document(page.url, page.title, page.content)
 
         tasks = [asyncio.create_task(fetch_one(u)) for u in urls]
-        done, pending = await asyncio.wait(tasks, timeout=self._extract_deadline)
-        for task in pending:
-            task.cancel()
+        try:
+            done, pending = await asyncio.wait(tasks, timeout=self._extract_deadline)
+        finally:
+            # Deadline reached, or Hermes cancelled us (web.extract_timeout): stop every unfinished fetch before
+            # the client closes, so nothing keeps running — and billing — in the background.
+            unfinished = [t for t in tasks if not t.done()]
+            for task in unfinished:
+                task.cancel()
+            if unfinished:
+                await asyncio.gather(*unfinished, return_exceptions=True)
         if pending:
-            await asyncio.gather(*pending, return_exceptions=True)
             logger.warning("DeepSeek extract: %d URL(s) unfinished after %.0fs", len(pending), self._extract_deadline)
         timeout_msg = f"DeepSeek Fetch did not finish within {self._extract_deadline:g}s"
         return [t.result() if t in done else page_error(u, timeout_msg) for t, u in zip(tasks, urls, strict=True)]

@@ -13,6 +13,7 @@ MIN_COUNT = 1
 MAX_COUNT = 50
 MAX_URL_CHARS = 8192
 _URL_PREVIEW_CHARS = 200
+_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 
 
 def validate_query(query: str) -> tuple[str, bool]:
@@ -70,6 +71,8 @@ def validate_url(url: str) -> str:
     preview = u[:_URL_PREVIEW_CHARS]
     if len(u) > MAX_URL_CHARS:
         raise ValidationError(f"URL is longer than {MAX_URL_CHARS} characters.")
+    if any(c.isspace() or not c.isprintable() for c in u):
+        raise ValidationError(f"URL must not contain whitespace or control characters: {preview!r}.")
     try:
         parts = urlsplit(u)
         host = parts.hostname
@@ -82,4 +85,26 @@ def validate_url(url: str) -> str:
         raise ValidationError(f"URL has no host: {preview!r}.")
     if has_userinfo:
         raise ValidationError("URL must not contain a username or password.")
+    return u
+
+
+def validate_base_url(base_url: str) -> str:
+    """API endpoint that receives the Bearer key: https (plain http only for loopback), a host, no userinfo,
+    no whitespace → URL without trailing slash. Messages never echo the URL (it may embed credentials)."""
+    u = (base_url or "").strip().rstrip("/")
+    try:
+        parts = urlsplit(u)
+        host = (parts.hostname or "").lower()
+        has_userinfo = parts.username is not None or parts.password is not None
+    except ValueError as exc:
+        raise ValidationError("base_url is not a valid URL.") from exc
+    scheme = parts.scheme.lower()
+    if not host or scheme not in ("https", "http") or any(c.isspace() or not c.isprintable() for c in u):
+        raise ValidationError("base_url must be an https:// URL with a host.")
+    if scheme == "http" and host not in _LOOPBACK_HOSTS:
+        raise ValidationError(
+            "base_url must use https:// (plain http is only allowed for localhost); it carries the API key."
+        )
+    if has_userinfo:
+        raise ValidationError("base_url must not contain a username or password.")
     return u

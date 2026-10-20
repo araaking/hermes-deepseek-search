@@ -5,8 +5,10 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlsplit
 
-from hermes_deepseek_search.core import DEFAULT_BASE_URL
+from hermes_deepseek_search.core import DEFAULT_BASE_URL, ValidationError
+from hermes_deepseek_search.core.validation import validate_base_url
 
 logger = logging.getLogger(__name__)
 
@@ -42,18 +44,28 @@ def _coerce(get: Any, key: str, default: Any, kind: type, *, lo: float, hi: floa
     raw = get(key, default)
     try:
         value = kind(raw)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):  # OverflowError: YAML `.inf` → int(float("inf"))
         logger.warning("web-deepseek setting %s=%r is not a valid %s; using %r", key, raw, kind.__name__, default)
         return default
-    if isinstance(raw, bool) or not lo <= value <= hi:
+    if isinstance(raw, bool) or (kind is int and isinstance(raw, float) and not raw.is_integer()):
+        logger.warning("web-deepseek setting %s=%r is not a valid %s; using %r", key, raw, kind.__name__, default)
+        return default
+    if not lo <= value <= hi:  # also rejects NaN, which fails every comparison
         logger.warning("web-deepseek setting %s=%r is outside %s..%s; using %r", key, raw, lo, hi, default)
         return default
     return value
 
 
 def _coerce_url(get: Any, default: str) -> str:
+    """``base_url`` receives the API key: https only (http for localhost), no credentials in the URL. The raw
+    value is never logged because it may embed a password."""
     raw = get("base_url", default)
-    if isinstance(raw, str) and raw.strip().lower().startswith(("https://", "http://")):
-        return raw.strip()
-    logger.warning("web-deepseek setting base_url=%r is not an http(s) URL; using %r", raw, default)
-    return default
+    try:
+        url = validate_base_url(raw if isinstance(raw, str) else "")
+    except ValidationError as exc:
+        logger.warning("web-deepseek setting base_url=<hidden> is invalid (%s); using %r", exc, default)
+        return default
+    host = urlsplit(url).hostname
+    if host != urlsplit(default).hostname:
+        logger.warning("web-deepseek setting base_url points at %s — the DeepSeek API key is sent there", host)
+    return url

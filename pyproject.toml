@@ -41,7 +41,7 @@ web-deepseek = "hermes_deepseek_search.hermes"
 dev = [
   "pytest==9.1.1",
   "pytest-asyncio==1.3.0",
-  "pytest-cov>=6",
+  "pytest-cov==7.1.0",
   "ruff==0.15.10",
 ]
 
