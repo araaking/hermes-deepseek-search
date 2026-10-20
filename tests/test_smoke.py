@@ -247,3 +247,26 @@ class TestCli:
         monkeypatch.setitem(sys.modules, "tools.web_tools", None)  # force ImportError regardless of test order
         assert smoke.main([]) == 2
         assert "Hermes Agent is not importable" in capsys.readouterr().out
+
+
+class TestPluginDirToMirror:
+    @staticmethod
+    def _entry_points(names):
+        eps = [types.SimpleNamespace(name=n) for n in names]
+        return lambda group: eps if group == "hermes_agent.plugins" else []
+
+    def test_none_when_entry_point_installed(self, monkeypatch):
+        monkeypatch.setattr(smoke.importlib.metadata, "entry_points", self._entry_points(["web-deepseek"]))
+        assert smoke.plugin_dir_to_mirror() is None
+
+    def test_checkout_root_when_only_directory_install(self, monkeypatch):
+        monkeypatch.setattr(smoke.importlib.metadata, "entry_points", self._entry_points(["other-plugin"]))
+        root = smoke.plugin_dir_to_mirror()
+        assert root is not None
+        assert (root / "plugin.yaml").is_file()
+        assert (root / "src" / "hermes_deepseek_search" / "smoke.py").is_file()
+
+    def test_none_outside_a_plugin_checkout(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(smoke.importlib.metadata, "entry_points", self._entry_points([]))
+        monkeypatch.setattr(smoke, "__file__", str(tmp_path / "site-packages" / "hermes_deepseek_search" / "smoke.py"))
+        assert smoke.plugin_dir_to_mirror() is None

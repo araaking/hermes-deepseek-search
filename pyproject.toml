@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "hermes-deepseek-search"
-version = "0.1.0"
+version = "0.2.0"
 description = "DeepSeek Search & Fetch web provider for Hermes Agent (web_search + web_extract)"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -65,3 +65,7 @@ src = ["src", "tests"]
 [tool.ruff.lint]
 preview = true
 select = ["E", "F", "W", "I", "B", "UP", "ASYNC", "PLW1514"]
+
+[tool.ruff.lint.isort]
+# The repo root is itself a package (the Hermes directory-plugin wrapper), which hides `tests` from detection.
+known-first-party = ["hermes_deepseek_search", "tests"]

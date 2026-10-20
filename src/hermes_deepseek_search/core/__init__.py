@@ -21,6 +21,7 @@ from hermes_deepseek_search.core.errors import (
     ServerError,
     ValidationError,
 )
+from hermes_deepseek_search.core.markdown import unescape_markdown
 from hermes_deepseek_search.core.models import FetchResult, SearchResponse, SearchResult
 
 __all__ = [
@@ -46,4 +47,5 @@ __all__ = [
     "SearchResult",
     "ServerError",
     "ValidationError",
+    "unescape_markdown",
 ]

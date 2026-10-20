@@ -25,7 +25,7 @@ import httpx
 import pytest
 
 from hermes_deepseek_search.core import DEFAULT_BASE_URL, DeepSeekClient
-from hermes_deepseek_search.hermes import register
+from hermes_deepseek_search.hermes import cli, register
 from hermes_deepseek_search.hermes._sync import run_sync
 from hermes_deepseek_search.hermes.provider import DeepSeekWebSearchProvider
 from hermes_deepseek_search.hermes.settings import ProviderSettings
@@ -237,6 +237,11 @@ class TestExtract:
             "metadata": {"sourceURL": "https://b.example", "title": "B"},
         }
 
+    async def test_markdown_escapes_removed_from_content(self, make_provider, api_key):
+        page = _ok({"title": "LP", "content": "\\# Radiofrequency\n\\- 60 min\n`a\\-b`"})
+        out = await make_provider([page]).extract(["https://a.example"])
+        assert out[0]["content"] == out[0]["raw_content"] == "# Radiofrequency\n- 60 min\n`a\\-b`"
+
     async def test_empty_list(self, make_provider, api_key, recorder):
         assert await make_provider([_ok({})]).extract([]) == []
         assert recorder.requests == []
@@ -434,6 +439,22 @@ class TestRegister:
         ctx = FakeContext({"extract_concurrency": 3})
         register(ctx)
         assert ctx.providers[0]._settings.extract_concurrency == 3
+
+    def test_registers_cli_command_when_supported(self):
+        calls = []
+
+        class CliContext(FakeContext):
+            def register_cli_command(self, name, help, setup_fn, handler_fn=None, description=""):
+                calls.append((name, help, setup_fn, handler_fn))
+
+        register(CliContext())
+        assert calls == [("web-deepseek", cli.HELP, cli.setup_parser, cli.handle)]
+
+    def test_context_without_cli_support_still_registers_provider(self):
+        ctx = FakeContext()
+        assert not hasattr(ctx, "register_cli_command")
+        register(ctx)
+        assert len(ctx.providers) == 1
 
     def test_entry_point_declared(self):
         eps = importlib.metadata.entry_points(group="hermes_agent.plugins")

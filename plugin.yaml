@@ -1,0 +1,34 @@
+# Hermes directory-plugin manifest (Hermes 0.22+): `hermes plugins install araaking/hermes-deepseek-search`.
+# Python dependencies come from pyproject.toml next to this file. `name` must stay equal to the
+# `hermes_agent.plugins` entry point in pyproject.toml so both install routes share one plugin id.
+name: web-deepseek
+version: 0.2.0
+manifest_version: 2
+api_version: 1
+description: DeepSeek Search & Fetch API as the backend for web_search and web_extract
+author: araaking
+license: MIT
+homepage: https://github.com/araaking/hermes-deepseek-search
+tags: [web, search, deepseek]
+requires_env:
+  - name: DEEPSEEK_API_KEY
+    description: DeepSeek API key (the same key Hermes uses for DeepSeek models)
+    url: https://platform.deepseek.com/api_keys
+    secret: true
+config_schema:
+  min_rerank_score:
+    type: float
+    default: 0.0
+    description: Drop search hits below this DeepSeek score (0-3; 1.5+ is high quality)
+  max_retries:
+    type: int
+    default: 2
+    description: Retries for 408 / 429 / 5xx / network errors (0-5)
+  base_url:
+    type: str
+    default: https://api.deepseek.com
+    description: API endpoint; must be https:// (http:// only for localhost) and receives your API key
+  extract_concurrency:
+    type: int
+    default: 5
+    description: Parallel Fetch calls per web_extract (1-25)

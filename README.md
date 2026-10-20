@@ -31,48 +31,52 @@ account or key.
 - Retries with backoff for 408 / 429 / 5xx / network errors; clear, model-readable errors for 401 / 402 / 403 / 404.
 - Local validation before spending a request: queries over 128 characters are shortened at a word boundary (the
   response carries a `notice`), invalid URLs are rejected without a call.
+- Page text from Fetch is cleaned of Markdown backslash escapes (`\#`, `\-`, …) outside code blocks.
 - Imports only Hermes' public plugin surface (`agent.web_search_provider`).
-- Built-in end-to-end check: `python -m hermes_deepseek_search.smoke`.
+- Built-in end-to-end check: `hermes web-deepseek smoke`.
 
 ## Requirements
 
-- Hermes Agent (verified with 0.21.0)
-- Python 3.11+ — i.e. Hermes' own virtualenv
+- Hermes Agent 0.22 or newer (also works on 0.21; see [Hermes 0.21](#hermes-021))
 - A DeepSeek API key ([platform.deepseek.com/api_keys](https://platform.deepseek.com/api_keys))
 
 ## Installation
 
-Install into **Hermes' virtualenv**, not your system Python:
-
 ```bash
-HPY=~/.hermes/hermes-agent/venv/bin/python
-uv pip install --python "$HPY" "git+https://github.com/araaking/hermes-deepseek-search"
-# without uv:
-"$HPY" -m pip install "git+https://github.com/araaking/hermes-deepseek-search"
-```
-
-On Windows the interpreter is `%LOCALAPPDATA%\hermes\hermes-agent\venv\Scripts\python.exe`.
-
-## Enable
-
-```bash
-hermes plugins enable web-deepseek
+hermes plugins install araaking/hermes-deepseek-search --enable
 hermes config set web.backend deepseek        # or web.search_backend / web.extract_backend separately
 ```
 
-Make sure `DEEPSEEK_API_KEY` is set in the environment or in `~/.hermes/.env`, then restart running Hermes
-sessions or the gateway.
+Hermes clones the repository to `~/.hermes/plugins/web-deepseek` and installs its Python dependency (`httpx`)
+into the environment it manages, after asking you. If `DEEPSEEK_API_KEY` is not set yet, the installer asks for it
+and saves it to `~/.hermes/.env`. Restart running Hermes sessions or the gateway afterwards.
+
+Update with `hermes plugins update web-deepseek`; remove with `hermes plugins remove web-deepseek`.
+
+### Hermes 0.21
+
+Hermes 0.21 does not install a plugin's Python dependencies, so install the package into Hermes' virtualenv
+instead, then enable it:
+
+```bash
+HPY=~/.hermes/hermes-agent/venv/bin/python     # Windows: %LOCALAPPDATA%\hermes\hermes-agent\venv\Scripts\python.exe
+uv pip install --python "$HPY" "git+https://github.com/araaking/hermes-deepseek-search"
+hermes plugins enable web-deepseek
+hermes config set web.backend deepseek
+```
+
+Do not use this on 0.22: there, Hermes rebuilds its environment on updates and drops packages installed by hand.
 
 ## Verify
 
 ```bash
-"$HPY" -m hermes_deepseek_search.smoke                 # isolated: throwaway HERMES_HOME, your config untouched
-"$HPY" -m hermes_deepseek_search.smoke --current-home  # after enabling: checks your real configuration
+hermes web-deepseek smoke                  # isolated: throwaway HERMES_HOME, your config untouched
+hermes web-deepseek smoke --current-home   # checks your real configuration
 ```
 
 ```
-Hermes Agent 0.21.0 · hermes-deepseek-search 0.1.0 · isolated home (keyless rescue off)
-[PASS] plugin registered — deepseek via entry point
+Hermes Agent 0.22.2 · hermes-deepseek-search 0.2.0 · isolated home (keyless rescue off)
+[PASS] plugin registered — deepseek via plugin discovery
 [PASS] missing-key error path (search) — DEEPSEEK_API_KEY is not set
 [PASS] missing-key error path (extract) — DEEPSEEK_API_KEY is not set
 [PASS] invalid-key error path — DeepSeek Search returned HTTP 401: ...
@@ -84,8 +88,9 @@ Hermes Agent 0.21.0 · hermes-deepseek-search 0.1.0 · isolated home (keyless re
 ```
 
 Exit code `0` means all passed, `1` a check failed, `2` Hermes is not importable (wrong interpreter). Live checks
-cost about 3 successful requests (~$0.00225); `--skip-live` runs only the free checks. The full walkthrough —
-including uninstalling — is in [docs/server-verification.md](docs/server-verification.md).
+cost about 3 successful requests (~$0.00225); `--skip-live` runs only the free checks. On Hermes 0.21 the same
+check also runs as `"$HPY" -m hermes_deepseek_search.smoke`. The full walkthrough, including uninstalling, is in
+[docs/server-verification.md](docs/server-verification.md).
 
 ## Configuration
 
@@ -144,17 +149,16 @@ hermes config set web.keyless_fallback false
 
 ## Not supported (yet)
 
-- `hermes plugins install <git-url>`: Hermes 0.21.0 does not install a git plugin's Python dependencies, so install
-  with pip/uv as shown above.
-- A PyPI package.
+- A listing in the Hermes plugin catalog, or a PyPI package.
 - An MCP server for non-Hermes clients.
 
 ## Troubleshooting
 
 | Symptom | Fix |
 |---|---|
-| `Hermes Agent is not importable` | Run the smoke test with Hermes' interpreter (`$HPY`) |
-| `plugin registered` FAIL | Install into Hermes' venv and add `web-deepseek` to `plugins.enabled` |
+| `hermes: invalid choice: 'web-deepseek'` | The plugin is not enabled: `hermes plugins enable web-deepseek` |
+| `Hermes Agent is not importable` | Run the smoke test through Hermes: `hermes web-deepseek smoke` |
+| `plugin registered` FAIL | Check `hermes plugins list`; `web-deepseek` must be installed and enabled |
 | `HTTP 401` / `HTTP 402` | Invalid key / insufficient DeepSeek balance |
 | `served by 'exa' (rescued from 'deepseek')` | DeepSeek failed; read `backend_error` (see Keyless rescue) |
 
@@ -169,21 +173,23 @@ uv run ruff check . && uv run ruff format --check .
 DEEPSEEK_API_KEY=sk-... uv run pytest -m live  # real API, ~$0.0015
 ```
 
-To try the package against a local Hermes without installing it, build a wheel, unzip it into a scratch
-directory, and run the smoke test with Hermes' interpreter and that directory on `PYTHONPATH`:
+To try a working copy against a local Hermes without touching your setup, point `HERMES_HOME` at a scratch
+directory that holds the checkout as a directory plugin:
 
 ```bash
-uv build
-python -c "import zipfile,glob; zipfile.ZipFile(glob.glob('dist/*.whl')[0]).extractall('/tmp/hds-site')"
-PYTHONPATH=/tmp/hds-site "$HPY" -m hermes_deepseek_search.smoke --skip-live
+mkdir -p /tmp/hds-home/plugins && cp -r . /tmp/hds-home/plugins/web-deepseek
+printf 'plugins:\n  enabled:\n    - web-deepseek\n' > /tmp/hds-home/config.yaml
+HERMES_HOME=/tmp/hds-home hermes web-deepseek smoke --skip-live
 ```
 
 ### Project layout
 
 ```
+plugin.yaml    # Hermes directory-plugin manifest (id web-deepseek)
+__init__.py    # directory-plugin wrapper: forwards register(ctx) to the package
 src/hermes_deepseek_search/
-├── core/      # Hermes-free async DeepSeek client: validation, errors, retry, models
-├── hermes/    # Hermes adapter: provider, settings, result envelopes, register() entry point
+├── core/      # Hermes-free async DeepSeek client: validation, errors, retry, models, Markdown cleanup
+├── hermes/    # Hermes adapter: provider, settings, result envelopes, CLI command, register() entry point
 └── smoke.py   # end-to-end check against a real Hermes install
 tests/         # core, adapter (with a stubbed Hermes ABC) and smoke evaluators
 ```

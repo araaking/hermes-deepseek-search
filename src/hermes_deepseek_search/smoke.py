@@ -1,9 +1,13 @@
 """End-to-end smoke test against a real Hermes Agent install.
 
-Run with Hermes' own interpreter so its modules are importable::
+It must run with Hermes' own interpreter so Hermes' modules are importable. Once the plugin is enabled, Hermes
+picks that interpreter itself::
 
-    ~/.hermes/hermes-agent/venv/bin/python -m hermes_deepseek_search.smoke            # isolated (default)
-    ~/.hermes/hermes-agent/venv/bin/python -m hermes_deepseek_search.smoke --current-home
+    hermes web-deepseek smoke                  # isolated (default)
+    hermes web-deepseek smoke --current-home
+
+On Hermes 0.21 with a fixed venv, ``~/.hermes/hermes-agent/venv/bin/python -m hermes_deepseek_search.smoke`` also
+works.
 
 Isolated mode points ``HERMES_HOME`` at a throwaway directory whose config selects ``deepseek``, enables the
 ``web-deepseek`` plugin and turns Hermes' keyless rescue OFF — otherwise a failing provider is silently answered
@@ -14,6 +18,7 @@ Exit codes: 0 all passed, 1 a check failed, 2 Hermes is not importable.
 from __future__ import annotations
 
 import argparse
+import importlib.metadata
 import json
 import os
 import shutil
@@ -22,6 +27,7 @@ import sys
 import tempfile
 from collections.abc import Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Literal
 
 from hermes_deepseek_search import __version__
@@ -57,6 +63,17 @@ def isolated_config_text() -> str:
         "  enabled:\n"
         f"    - {PLUGIN_ID}\n"
     )
+
+
+def plugin_dir_to_mirror() -> Path | None:
+    """The directory-plugin checkout this package runs from, when Hermes has no other way to find it.
+
+    Isolated mode uses a throwaway ``HERMES_HOME``, where a directory install (``~/.hermes/plugins/web-deepseek``)
+    is invisible unless it is copied in. A copy is not needed when the pip entry point is installed."""
+    if any(ep.name == PLUGIN_ID for ep in importlib.metadata.entry_points(group="hermes_agent.plugins")):
+        return None
+    root = Path(__file__).resolve().parents[2]  # <root>/src/hermes_deepseek_search/smoke.py
+    return root if (root / "plugin.yaml").is_file() else None
 
 
 def _rescued(payload: dict[str, Any]) -> str:
@@ -159,10 +176,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         import tools.web_tools  # noqa: F401
         from agent import web_search_registry  # noqa: F401
     except ImportError as exc:
-        print(
-            f"Hermes Agent is not importable ({exc}). Run this with Hermes' own interpreter, e.g. "
-            "~/.hermes/hermes-agent/venv/bin/python -m hermes_deepseek_search.smoke"
-        )
+        print(f"Hermes Agent is not importable ({exc}). Run it through Hermes instead: hermes web-deepseek smoke")
         return 2
     return _report(args)
 
@@ -213,6 +227,10 @@ def run(args: argparse.Namespace) -> list[Check]:  # pragma: no cover
         home = tempfile.mkdtemp(prefix="deepseek-smoke-")
         with open(os.path.join(home, "config.yaml"), "w", encoding="utf-8") as fh:
             fh.write(isolated_config_text())
+        plugin_dir = plugin_dir_to_mirror()
+        if plugin_dir is not None and not args.register:
+            ignore = shutil.ignore_patterns(".git", ".venv", "__pycache__", "tests", "docs", "dist")
+            shutil.copytree(plugin_dir, os.path.join(home, "plugins", PLUGIN_ID), ignore=ignore)
         os.environ["HERMES_HOME"] = home
     try:
         return _run_checks(args, isolated=isolated)
@@ -222,6 +240,7 @@ def run(args: argparse.Namespace) -> list[Check]:  # pragma: no cover
 
 
 def _run_checks(args: argparse.Namespace, *, isolated: bool) -> list[Check]:  # pragma: no cover
+    import tools.web_tools as web_tools
     from agent import web_search_registry as registry
     from tools.web_tools import web_extract_tool, web_search_tool
 
@@ -247,18 +266,21 @@ def _run_checks(args: argparse.Namespace, *, isolated: bool) -> list[Check]:  # 
         os.environ.pop(API_KEY_ENV, None)
         missing_search = search("deepseek smoke missing key")
         missing_extract = extract(args.url)
+    ensure_discovered = getattr(web_tools, "_ensure_web_plugins_loaded", None)  # Hermes 0.21-0.22, idempotent
+    if ensure_discovered is not None:
+        ensure_discovered()  # --current-home makes no tool call first, so discovery may not have run yet
     provider = registry.get_provider(PROVIDER_NAME)
     if provider is None:
         checks.append(
             Check(
                 "plugin registered",
                 "FAIL",
-                f"no '{PROVIDER_NAME}' provider — install the package into Hermes' venv and add "
+                f"no '{PROVIDER_NAME}' provider — install the plugin into Hermes (see README) and add "
                 f"'{PLUGIN_ID}' to plugins.enabled (or pass --register)",
             )
         )
         return checks
-    how = "registered directly (--register)" if args.register else "via entry point"
+    how = "registered directly (--register)" if args.register else "via plugin discovery"
     checks.append(Check("plugin registered", "PASS", f"{PROVIDER_NAME} {how}"))
 
     if isolated:

@@ -18,7 +18,7 @@ from typing import Any
 
 from agent.web_search_provider import WebSearchProvider, get_provider_env
 
-from hermes_deepseek_search.core import API_KEY_ENV, DeepSeekClient, DeepSeekError
+from hermes_deepseek_search.core import API_KEY_ENV, DeepSeekClient, DeepSeekError, unescape_markdown
 from hermes_deepseek_search.hermes._sync import run_sync
 from hermes_deepseek_search.hermes.envelope import (
     document,
@@ -157,7 +157,7 @@ class DeepSeekWebSearchProvider(WebSearchProvider):
                 except Exception as exc:
                     logger.warning("DeepSeek extract error for %s: %s", url, exc)
                     return page_error(url, f"DeepSeek extract failed: {exc}")
-                return document(page.url, page.title, page.content)
+                return document(page.url, page.title, unescape_markdown(page.content))
 
         tasks = [asyncio.create_task(fetch_one(u)) for u in urls]
         try:
