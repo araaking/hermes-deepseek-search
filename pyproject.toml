@@ -37,12 +37,14 @@ Changelog = "https://github.com/araaking/hermes-deepseek-search/blob/main/CHANGE
 [project.entry-points."hermes_agent.plugins"]
 web-deepseek = "hermes_deepseek_search.hermes"
 
+# Floors only; uv.lock pins the exact versions CI uses. Hermes 0.22 resolves this group together with its own
+# exact dev pins when it installs the plugin, so an exact pin here that differs from Hermes' breaks the install.
 [dependency-groups]
 dev = [
-  "pytest==9.1.1",
-  "pytest-asyncio==1.4.0",
-  "pytest-cov==7.1.0",
-  "ruff==0.17.1",
+  "pytest>=9.1",
+  "pytest-asyncio>=1.3",
+  "pytest-cov>=7.1",
+  "ruff>=0.15.10",
 ]
 
 [tool.hatch.build.targets.wheel]

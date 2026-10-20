@@ -5,8 +5,10 @@ updates:
     directory: /
     schedule:
       interval: weekly
-  # Python dependencies (pyproject.toml + uv.lock).
+  # Python dependencies: bump uv.lock only. pyproject.toml keeps ranges wide enough to resolve together with
+  # Hermes' own pins (Hermes 0.22 locks the plugin's pyproject.toml into its environment on install).
   - package-ecosystem: uv
     directory: /
+    versioning-strategy: lockfile-only
     schedule:
       interval: weekly
