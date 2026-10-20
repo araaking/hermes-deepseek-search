@@ -59,10 +59,11 @@ dev = [
 packages = ["src/hermes_deepseek_search"]
 
 [tool.hatch.build.targets.sdist]
-exclude = [".claude", ".github", ".venv", "dist", ".coverage"]
+exclude = [".claude", ".github", ".venv", "dist", ".coverage", "bench/runs"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]  # `bench` (repo-root package) for tests/bench
 asyncio_mode = "auto"
 markers = ["live: hits the real DeepSeek API (spends money; needs DEEPSEEK_API_KEY; select with -m live)"]
 addopts = "-m 'not live'"
@@ -78,4 +79,4 @@ select = ["E", "F", "W", "I", "B", "UP", "ASYNC", "PLW1514"]
 
 [tool.ruff.lint.isort]
 # The repo root is itself a package (the Hermes directory-plugin wrapper), which hides `tests` from detection.
-known-first-party = ["hermes_deepseek_search", "tests"]
+known-first-party = ["hermes_deepseek_search", "tests", "bench"]

@@ -12,3 +12,7 @@ build/
 
 # Local planning artefacts (PRD/plans/reports) — not published
 .claude/
+
+# Benchmark runs (large raw API results) and the owner's original benchmark archive
+bench/runs/
+/search_benchmark_*.zip
