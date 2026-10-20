@@ -1,0 +1,67 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "hermes-deepseek-search"
+version = "0.1.0"
+description = "DeepSeek Search & Fetch web provider for Hermes Agent (web_search + web_extract)"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "araaking" }]
+keywords = ["hermes-agent", "deepseek", "web-search", "plugin", "rag", "llm-tools"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Framework :: AsyncIO",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Internet :: WWW/HTTP :: Indexing/Search",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = ["httpx>=0.27,<1"]
+
+[project.urls]
+Homepage = "https://github.com/araaking/hermes-deepseek-search"
+Repository = "https://github.com/araaking/hermes-deepseek-search"
+Issues = "https://github.com/araaking/hermes-deepseek-search/issues"
+Changelog = "https://github.com/araaking/hermes-deepseek-search/blob/main/CHANGELOG.md"
+
+[project.entry-points."hermes_agent.plugins"]
+web-deepseek = "hermes_deepseek_search.hermes"
+
+[dependency-groups]
+dev = [
+  "pytest==9.1.1",
+  "pytest-asyncio==1.3.0",
+  "pytest-cov>=6",
+  "ruff==0.15.10",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/hermes_deepseek_search"]
+
+[tool.hatch.build.targets.sdist]
+exclude = [".claude", ".github", ".venv", "dist", ".coverage"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = ["live: hits the real DeepSeek API (spends money; needs DEEPSEEK_API_KEY; select with -m live)"]
+addopts = "-m 'not live'"
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+preview = true
+select = ["E", "F", "W", "I", "B", "UP", "ASYNC", "PLW1514"]
